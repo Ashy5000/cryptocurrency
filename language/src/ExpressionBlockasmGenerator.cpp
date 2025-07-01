@@ -68,7 +68,7 @@ std::tuple<int, Type> ExpressionBlockasmGenerator::GenerateBlockasmFromExpressio
                      << " 0x00000000" << std::endl;
             int val = stoi(expression.children[0].value);
             blockasm << "SetCnst 0x" << std::setfill('0') << std::setw(8) << std::hex << nextAllocatedLocation << " 0x";
-            blockasm << std::setfill('0') << std::setw(16) << std::hex << val << " 0x00000000" << std::endl;
+            blockasm << std::setfill('0') << std::setw(14) << std::hex << val << " 0x00000000" << std::endl;
             return std::make_tuple(nextAllocatedLocation, Type::uint64);
         }
         if (expression.children[0].type == TokenType::string_lit) {
@@ -77,7 +77,7 @@ std::tuple<int, Type> ExpressionBlockasmGenerator::GenerateBlockasmFromExpressio
                      << " 0x00000000" << std::endl;
             blockasm << "SetCnst 0x" << std::setfill('0') << std::setw(8) << std::hex << nextAllocatedLocation << " 0x";
             std::istreambuf_iterator it(buffer.rdbuf());
-            std::istreambuf_iterator<char> end; // eof
+            std::istreambuf_iterator<char> end;
             std::stringstream out;
             out << std::hex;
             std::copy(it, end, std::ostream_iterator<int>(out));
@@ -102,7 +102,7 @@ std::tuple<int, Type> ExpressionBlockasmGenerator::GenerateBlockasmFromExpressio
                 }
                 int locationLoc = nextAllocatedLocation++;
                 blockasm << "InitBfr 0x" << std::setfill('0') << std::setw(8) << std::hex << locationLoc << " 0x00000000" << std::endl;
-                blockasm << "SetCnst 0x" << std::setfill('0') << std::setw(8) << std::hex << locationLoc << " 0x00";
+                blockasm << "SetCnst 0x" << std::setfill('0') << std::setw(8) << std::hex << locationLoc << " 0x";
                 blockasm << std::setfill('0') << std::setw(14) << std::hex << location << " 0x00000000" << std::endl;
                 int resultLoc = nextAllocatedLocation;
                 blockasm << "InitBfr 0x" << std::setfill('0') << std::setw(8) << std::hex << resultLoc << " 0x00000000" << std::endl;

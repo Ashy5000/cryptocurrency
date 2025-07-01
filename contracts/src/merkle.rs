@@ -13,7 +13,12 @@ pub struct MerkleNode<T> {
 fn hash_node<A: MerkleContainer<Vec<u8>> + Clone>(tree: &mut A, node_index: usize) -> String {
     let mut hasher = Sha256::new();
     hasher.update(tree.get_wrapper(node_index).unwrap().value.clone());
+    let mut indices = vec![];
     for (_, index) in tree.get_wrapper(node_index).unwrap().children.iter() {
+        indices.push(*index);
+    }
+    indices.sort();
+    for index in indices.iter() {
         hasher.update(tree.get_wrapper(index.clone()).unwrap().hash.clone());
     }
     let hash = hasher.finalize();
@@ -53,7 +58,7 @@ fn verify_node<A: MerkleContainer<Vec<u8>> + Clone>(tree: &mut A, node_index: us
     }
 }
 
-pub fn merklize(state: FxHashMap<String, Vec<u8>>) -> Vec<MerkleNode<Vec<u8>>> {
+pub fn merklize(state: Vec<(&std::string::String, &Vec<u8>)>) -> Vec<MerkleNode<Vec<u8>>> {
     let mut tree: Vec<MerkleNode<Vec<u8>>> = vec![MerkleNode {
         hash: String::new(),
         value: Vec::new(),
@@ -77,7 +82,7 @@ pub fn merklize(state: FxHashMap<String, Vec<u8>>) -> Vec<MerkleNode<Vec<u8>>> {
             tree[active].children.insert(c, new_index);
             active = new_index;
         }
-        tree[active].value = val.clone();
+        tree[active].value = val.clone().clone();
     }
     hash_vec_tree(&mut tree, 0);
     tree

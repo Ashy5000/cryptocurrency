@@ -10,6 +10,7 @@ impl MerkleContainer<Vec<u8>> for LazyVector<MerkleNode<Vec<u8>>> {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct MerkleState {
     pub(crate) contents: LazyVector<MerkleNode<Vec<u8>>>,
     pub(crate) prefix: String,
@@ -71,7 +72,11 @@ impl State for MerkleState {
         ))
     }
 
-    fn dump(&self) -> FxHashMap<String, Vec<u8>> {
+    fn dump(&mut self) -> FxHashMap<String, Vec<u8>> {
         self.transition.clone()
+    }
+
+    fn update_prefix(&mut self, prefix: String) {
+        self.prefix = prefix;
     }
 }

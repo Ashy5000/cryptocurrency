@@ -19,14 +19,11 @@ impl ZkBlockutilInterface {
 }
 
 impl BlockUtilInterface for ZkBlockutilInterface {
-    fn read_contract(&mut self, location: u64) -> Result<String, String> {
-        Ok(String::from(
-            std::string::String::from_utf8(get_from_merkle::<LazyVector<MerkleNode<Vec<u8>>>>(
+    fn read_contract(&mut self, location: String) -> Result<Vec<u8>, String> {
+        let res = get_from_merkle::<LazyVector<MerkleNode<Vec<u8>>>>(
                 &mut self.lazy_vec,
-                format!("{:x}", location),
-            ))
-            .unwrap(),
-        ))
+                location.parse().unwrap());
+        Ok(res)
     }
 
     fn get_from_state(&self, _property: String) -> (Vec<u8>, bool) {

@@ -183,8 +183,8 @@ func VerifySmartContractTransactions(block Block) bool {
 	}
 	state := CalculateCurrentState()
 	var root string
-	if len(state.ZenData) > 0 {
-		root = state.ZenData[0].Hash
+	if len(state.ZenData) > 1 || len(state.ZenContracts) > 1 {
+		root = Merge(state.ZenData, state.ZenContracts)[0].Hash
 	} else {
 		root = ""
 	}
@@ -209,7 +209,7 @@ func VerifySmartContractTransactions(block Block) bool {
 	hasher.Write([]byte(strconv.Itoa(len(Blockchain))))
 	hash := hasher.Sum(nil)
 	var transitionRoot string
-	if len(block.Transition.ZenUpdatedData) > 0 {
+	if len(block.Transition.ZenUpdatedData) > 1 {
 		transitionRoot = block.Transition.ZenUpdatedData[0].Hash
 	} else {
 		transitionRoot = ""
@@ -354,6 +354,7 @@ func GetMinVerifiers() int {
 func VerifySmartContract(contract Contract) bool {
 	contractStr := contract.Contents
 	hash := sha256.Sum256([]byte(contractStr))
+	fmt.Println(hash)
 	for _, party := range contract.Parties {
 		verifier := oqs.Signature{}
 		sigName := "Dilithium3"

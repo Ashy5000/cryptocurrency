@@ -1,9 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 
 	. "cryptocurrency/node_util"
+
 	"github.com/stretchr/testify/assert"
 )
 
@@ -37,6 +39,7 @@ func TestHashTree(t *testing.T) {
 	tree = InsertValue(tree, "test", []byte("test"))
 	tree = HashTree(tree, 0)
 	assert.NotNil(t, tree[0].Hash)
+	fmt.Println(tree[0].Hash)
 }
 
 func TestInsertAndGetValue(t *testing.T) {

@@ -26,7 +26,7 @@ void Compiler::InjectControlBuffer(ControlModule& cm) {
     size_t pos = 0;
     std::stringstream hex("");
     hex << std::setfill('0') << std::setw(8) << std::hex << cm.getRetLocation();
-    while ((pos = blockasm.find("~")) != std::string::npos) {
+    while ((pos = blockasm.find('~')) != std::string::npos) {
         blockasm.replace(pos, 1, hex.str());
     }
 }

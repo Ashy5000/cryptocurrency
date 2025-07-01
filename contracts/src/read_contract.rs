@@ -8,12 +8,15 @@ You should have received a copy of the GNU General Public License along with thi
 */
 use smartstring::alias::String;
 use std::{env, fs};
+use std::fs::File;
+use std::io::{BufReader, Read};
 
-pub fn read_contract() -> String {
+pub fn read_contract() -> Vec<u8> {
     let args: Vec<std::string::String> = env::args().collect();
     let contract_path = &args[1];
-    fs::read_to_string(contract_path)
-        .expect("Should have been able to read smart contract file")
-        .parse()
-        .unwrap()
+    let file = File::open(contract_path).unwrap();
+    let mut reader = BufReader::new(file);
+    let mut buffer = vec![];
+    reader.read_to_end(&mut buffer).unwrap();
+    buffer
 }

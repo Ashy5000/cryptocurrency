@@ -7,7 +7,7 @@ mod syntax_tree_test {
         let tree = contracts::syntax_tree::SyntaxTree {
             lines: vec![contracts::syntax_tree::Line {
                 command: "InitBfr".parse().unwrap(),
-                args: vec!["00000001".parse().unwrap(), "00000000".parse().unwrap()],
+                args: vec![vec![0, 0, 0, 1], vec![0, 0, 0, 0]],
             }],
         };
         assert_eq!(tree.lines[0].command, "InitBfr".to_owned());

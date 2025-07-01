@@ -21,10 +21,12 @@ RegisteredFunctionInfo ControlModule::registerFunction(std::default_random_engin
 
 std::string ControlModule::compile(int &nextAllocatedLocation) {
   std::stringstream result;
+  // Create buffer for return value
+  result << "InitBfr 0x~ 0x00000000" << std::endl;
   // Set selector location
   selectorLocLocation = nextAllocatedLocation++;
   result << "InitBfr 0x" << std::setfill('0') << std::setw(8) << std::hex << selectorLocLocation << " 0x00000000" << std::endl;
-  result << "SetCnst 0x" << std::setfill('0') << std::setw(8) << std::hex << selectorLocLocation << " 0x010000 0x00000000" << std::endl;
+  result << "SetCnst 0x" << std::setfill('0') << std::setw(8) << std::hex << selectorLocLocation << " 0x0000000001000000 0x00000000" << std::endl;
   // Get selected function ID
   const int selectorLocation = nextAllocatedLocation++;
   result << "InitBfr 0x" << std::setfill('0') << std::setw(8) << std::hex << selectorLocation << " 0x00000000" << std::endl;

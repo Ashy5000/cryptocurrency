@@ -1,4 +1,7 @@
+use std::ffi::OsString;
 use std::fs;
+use std::fs::File;
+use std::io::{BufReader, Read};
 use contracts::blockutil::{BlockUtilInterface, NodeBlockUtilInterface};
 use contracts::merkle::merklize;
 use contracts::read_contract::read_contract;
@@ -26,11 +29,14 @@ pub(crate) fn handle_request(data: Vec<u8>, socket: &mut Socket) {
         return;
     }
 
-    let contracts_file = fs::read_to_string(args[0]).unwrap();
-    let contract_contents_str = contracts_file.split("%").collect::<Vec<&str>>(); // % marks separation between contracts
+    let file = File::open(args[0]).unwrap();
+    let mut reader = BufReader::new(file);
+    let mut buffer = vec![];
+    reader.read_to_end(&mut buffer).unwrap();
+    let contract_contents_str = buffer.split(|x| *x == b'%').collect::<Vec<&[u8]>>(); // % marks separation between contracts
     let mut contract_contents = Vec::new();
     for contract in contract_contents_str {
-        contract_contents.push(std::string::String::from(contract));
+        contract_contents.push(contract.to_vec());
     }
     let contract_hashes_str = args[1].split("%").collect::<Vec<&str>>();
     let mut contract_hashes = Vec::new();
@@ -50,17 +56,23 @@ pub(crate) fn handle_request(data: Vec<u8>, socket: &mut Socket) {
 
     // Initialize merkle tree
     let mut data: FxHashMap<String, Vec<u8>> = FxHashMap::default();
-    let merkle_file = fs::read_to_string(args[4]).unwrap();
-    if merkle_file.len() != 0 {
-        let merkle_pairs: Vec<&str> = merkle_file.split("*").collect();
-        for pair in merkle_pairs {
-            let segments: Vec<&str> = pair.split(">").collect();
-            let key = String::from(segments[0]);
-            let value = hex::decode(segments[1].trim()).unwrap();
-            data.insert(key, value);
+    let merkle_raw = fs::read(args[4]).unwrap();
+    let mut iter = merkle_raw.into_iter();
+    while iter.len() > 0 {
+        loop {
+            let len_bytes = iter.by_ref().take(6).collect::<Vec<u8>>();
+            let len = String::from_utf8(len_bytes).unwrap().parse::<usize>().unwrap();
+            let key_bytes = iter.by_ref().take(len).collect::<Vec<u8>>();
+            let key = String::from_utf8(key_bytes).unwrap();
+            let len_bytes = iter.by_ref().take(6).collect::<Vec<u8>>();
+            let len = String::from_utf8(len_bytes).unwrap().parse::<usize>().unwrap();
+            let val = iter.by_ref().take(len).collect::<Vec<u8>>();
+            data.insert(key, val);
         }
     }
-    let tree = merklize(data);
+    let mut state_vec = data.iter().collect::<Vec<(&String, &Vec<u8>)>>();
+    state_vec.sort_by(|a, b| a.0.cmp(&b.0));
+    let tree = merklize(state_vec);
     let lazy_len = tree.len();
     let host_vector = HostVector::new(tree);
 

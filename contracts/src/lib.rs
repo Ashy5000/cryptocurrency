@@ -17,3 +17,5 @@ pub mod stack;
 pub mod state;
 pub mod syntax_tree;
 pub mod vm;
+
+mod conversion;

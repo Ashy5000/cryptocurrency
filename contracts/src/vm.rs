@@ -21,21 +21,23 @@ use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use smartstring::alias::String;
-use std::ffi::c_void;
+use std::ffi::{c_void, OsString};
+use hex::encode;
+use crate::conversion::to_u64;
 
 pub const VM_NIL: *const c_void = 0x0000 as *const c_void;
 
 #[inline(always)]
 pub fn vm_access_buffer_contents(
-    buffers: &mut FxHashMap<String, Buffer>,
-    loc: String,
-    err_loc: String,
+    buffers: &mut FxHashMap<Vec<u8>, Buffer>,
+    loc: &Vec<u8>,
+    err_loc: &Vec<u8>,
 ) -> Vec<u8> {
-    if !vm_check_buffer_initialization(buffers, loc.to_owned()) {
+    if !vm_check_buffer_initialization(buffers, loc) {
         vm_throw_local_error(buffers, err_loc);
         return vec![];
     }
-    if let Some(x) = buffers.get(&(loc.to_owned())) {
+    if let Some(x) = buffers.get(loc) {
         return x.contents.clone();
     }
     vec![]
@@ -43,15 +45,15 @@ pub fn vm_access_buffer_contents(
 
 #[inline(always)]
 pub fn vm_access_buffer(
-    buffers: &mut FxHashMap<String, Buffer>,
-    loc: String,
-    err_loc: String,
+    buffers: &mut FxHashMap<Vec<u8>, Buffer>,
+    loc: &Vec<u8>,
+    err_loc: &Vec<u8>,
 ) -> *mut Buffer {
-    if !vm_check_buffer_initialization(buffers, loc.to_owned()) {
-        vm_throw_local_error(buffers, err_loc);
+    if !vm_check_buffer_initialization(buffers, loc) {
+        vm_throw_local_error(buffers, &err_loc);
         return VM_NIL as *mut Buffer;
     }
-    if let Some(x) = buffers.get_mut(&(loc.to_owned())) {
+    if let Some(x) = buffers.get_mut(loc) {
         return x;
     }
     VM_NIL as *mut Buffer
@@ -59,22 +61,22 @@ pub fn vm_access_buffer(
 
 #[inline(always)]
 pub fn vm_check_buffer_initialization(
-    buffers: &mut FxHashMap<String, Buffer>,
-    loc: String,
+    buffers: &mut FxHashMap<Vec<u8>, Buffer>,
+    loc: &Vec<u8>,
 ) -> bool {
     buffers.contains_key(&(loc.clone()))
 }
 
 #[inline(always)]
-pub fn vm_throw_global_error(buffers: &mut FxHashMap<String, Buffer>) {
-    if let Some(x) = buffers.get_mut::<String>(&("00000000".into())) {
+pub fn vm_throw_global_error(buffers: &mut FxHashMap<Vec<u8>, Buffer>) {
+    if let Some(x) = buffers.get_mut(&vec![0; 4]) {
         *x = Buffer { contents: vec![1] };
     }
 }
 
 #[inline(always)]
-pub fn vm_throw_local_error(buffers: &mut FxHashMap<String, Buffer>, loc: String) {
-    if !vm_check_buffer_initialization(buffers, loc.clone()) {
+pub fn vm_throw_local_error(buffers: &mut FxHashMap<Vec<u8>, Buffer>, loc: &Vec<u8>) {
+    if !vm_check_buffer_initialization(buffers, loc) {
         vm_throw_global_error(buffers);
         return;
     }
@@ -95,7 +97,7 @@ pub struct VmInstructionResult {
 
 pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterface + Clone>(
     line: Line,
-    buffers: &mut FxHashMap<String, Buffer>,
+    buffers: &mut FxHashMap<Vec<u8>, Buffer>,
     blockutil_interface: &mut D,
     contract_hash: String,
     pc: usize,
@@ -105,26 +107,26 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
     gas_limit: i64,
     sender: &Vec<u8>,
     out: &mut String,
-) -> VmInstructionResult {
-    match line.command.as_str() {
-        "NEXT" => VmInstructionResult {
+) -> VmInstructionResult where A: Clone, B: Clone, C: Clone {
+    match line.command {
+        b'\xFF' => VmInstructionResult {
             exit_details: None,
             next_pc: pc + 1,
         },
-        "Exit" => {
+        b'\x00' => {
             *gas_used += 1;
             VmInstructionResult {
                 exit_details: Some(VmExitDetails {
-                    exit_code: line.args[0].parse::<i64>().unwrap(),
+                    exit_code: to_u64(&line.args[0]).unwrap() as i64,
                     gas_used: *gas_used,
                 }),
                 next_pc: 0,
             }
         }
-        "ExitBfr" => {
+        b'\x01' => {
             *gas_used += 1;
-            if !vm_check_buffer_initialization(buffers, line.args[0].clone()) {
-                vm_throw_local_error(buffers, line.args[1].clone())
+            if !vm_check_buffer_initialization(buffers, &line.args[0]) {
+                vm_throw_local_error(buffers, &line.args[1])
             }
             let exit_code = buffers
                 .get(&line.args[0].clone())
@@ -139,7 +141,7 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: 0,
             }
         }
-        "InitBfr" => {
+        b'\x02' => {
             buffers.insert(
                 line.args[0].clone(),
                 Buffer {
@@ -152,11 +154,11 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         }
-        "CpyBfr" => {
-            if !vm_check_buffer_initialization(buffers, line.args[0].clone()) {
-                vm_throw_local_error(buffers, line.args[2].clone());
+        b'\x03' => {
+            if !vm_check_buffer_initialization(buffers, &line.args[0]) {
+                vm_throw_local_error(buffers, &line.args[2]);
             }
-            if !vm_check_buffer_initialization(buffers, line.args[1].clone()) {
+            if !vm_check_buffer_initialization(buffers, &line.args[1]) {
                 buffers.insert(
                     line.args[1].clone(),
                     Buffer {
@@ -166,7 +168,7 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 *gas_used += 2;
             }
             let src_contents: Vec<u8> =
-                vm_access_buffer_contents(buffers, line.args[0].clone(), line.args[2].clone());
+                vm_access_buffer_contents(buffers, &line.args[0], &line.args[2]);
             if let Some(dst) = buffers.get_mut(&(line.args[1].clone())) {
                 dst.contents = src_contents.clone();
                 *gas_used += src_contents.len() as i64 / 10;
@@ -177,9 +179,9 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         }
-        "FreeBfr" => {
-            if !vm_check_buffer_initialization(buffers, line.args[0].clone()) {
-                vm_throw_local_error(buffers, line.args[1].clone())
+        b'\x04' => {
+            if !vm_check_buffer_initialization(buffers, &line.args[0]) {
+                vm_throw_local_error(buffers, &line.args[1])
             }
             buffers
                 .remove(&line.args[0].clone())
@@ -190,8 +192,8 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         }
-        "BfrStat" => {
-            let status = vm_check_buffer_initialization(buffers, line.args[0].clone());
+        b'\x05' => {
+            let status = vm_check_buffer_initialization(buffers, &line.args[0]);
             if let Some(x) = buffers.get_mut(&(line.args[1].clone())) {
                 if status {
                     x.contents = vec![1];
@@ -205,13 +207,13 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         }
-        "BfrLen" => {
-            if !vm_check_buffer_initialization(buffers, line.args[0].clone())
-                || !vm_check_buffer_initialization(buffers, line.args[1].clone())
+        b'\x06' => {
+            if !vm_check_buffer_initialization(buffers, &line.args[0])
+                || !vm_check_buffer_initialization(buffers, &line.args[1])
             {
-                vm_throw_local_error(buffers, line.args[2].clone())
+                vm_throw_local_error(buffers, &line.args[2])
             }
-            let x = vm_access_buffer_contents(buffers, line.args[0].clone(), line.args[2].clone());
+            let x = vm_access_buffer_contents(buffers, &line.args[0], &line.args[2]);
             if let Some(y) = buffers.get_mut(&(line.args[1].clone())) {
                 y.load_u64(x.len().try_into().unwrap());
             }
@@ -220,14 +222,14 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         }
-        "Add" => {
+        b'\x07' => {
             execute_math_operation(
                 Add {},
                 buffers,
-                line.args[0].clone(),
-                line.args[1].clone(),
-                line.args[2].clone(),
-                line.args[3].clone(),
+                &line.args[0],
+                &line.args[1],
+                &line.args[2],
+                &line.args[3],
             );
             *gas_used += 1;
             VmInstructionResult {
@@ -235,14 +237,14 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         }
-        "Sub" => {
+        b'\x08' => {
             execute_math_operation(
                 Subtract {},
                 buffers,
-                line.args[0].clone(),
-                line.args[1].clone(),
-                line.args[2].clone(),
-                line.args[3].clone(),
+               &line.args[0],
+               &line.args[1],
+               &line.args[2],
+               &line.args[3],
             );
             *gas_used += 1;
             VmInstructionResult {
@@ -250,14 +252,14 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         }
-        "Mul" => {
+        b'\x09' => {
             execute_math_operation(
                 Multiply {},
                 buffers,
-                line.args[0].clone(),
-                line.args[1].clone(),
-                line.args[2].clone(),
-                line.args[3].clone(),
+                &line.args[0],
+                &line.args[1],
+                &line.args[2],
+                &line.args[3],
             );
             *gas_used += 2;
             VmInstructionResult {
@@ -265,14 +267,14 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         }
-        "Div" => {
+        b'\x0A' => {
             execute_math_operation(
                 Divide {},
                 buffers,
-                line.args[0].clone(),
-                line.args[1].clone(),
-                line.args[2].clone(),
-                line.args[3].clone(),
+                &line.args[0],
+                &line.args[1],
+                &line.args[2],
+                &line.args[3],
             );
             *gas_used += 2;
             VmInstructionResult {
@@ -280,14 +282,14 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         }
-        "Exp" => {
+        b'\x0B' => {
             execute_math_operation(
                 Exp {},
                 buffers,
-                line.args[0].clone(),
-                line.args[1].clone(),
-                line.args[2].clone(),
-                line.args[3].clone(),
+                &line.args[0],
+                &line.args[1],
+                &line.args[2],
+                &line.args[3],
             );
             *gas_used += 3;
             VmInstructionResult {
@@ -295,14 +297,14 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         }
-        "Mod" => {
+        b'\x0C' => {
             execute_math_operation(
                 Modulo {},
                 buffers,
-                line.args[0].clone(),
-                line.args[1].clone(),
-                line.args[2].clone(),
-                line.args[3].clone(),
+                &line.args[0],
+                &line.args[1],
+                &line.args[2],
+                &line.args[3],
             );
             *gas_used += 1;
             VmInstructionResult {
@@ -310,16 +312,16 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         }
-        "Eq" => unsafe {
-            if !vm_check_buffer_initialization(buffers, line.args[0].clone())
-                || !vm_check_buffer_initialization(buffers, line.args[1].clone())
-                || !vm_check_buffer_initialization(buffers, line.args[2].clone())
+        b'\x0D' => unsafe {
+            if !vm_check_buffer_initialization(buffers, &line.args[0])
+                || !vm_check_buffer_initialization(buffers, &line.args[1])
+                || !vm_check_buffer_initialization(buffers, &line.args[2])
             {
-                vm_throw_local_error(buffers, line.args[3].clone());
+                vm_throw_local_error(buffers, &line.args[3]);
             }
-            let x = vm_access_buffer_contents(buffers, line.args[0].clone(), line.args[3].clone());
-            let y = vm_access_buffer_contents(buffers, line.args[1].clone(), line.args[3].clone());
-            let res = vm_access_buffer(buffers, line.args[2].clone(), line.args[3].clone());
+            let x = vm_access_buffer_contents(buffers, &line.args[0], &line.args[3]);
+            let y = vm_access_buffer_contents(buffers, &line.args[1], &line.args[3]);
+            let res = vm_access_buffer(buffers, &line.args[2], &line.args[3]);
             if x == y {
                 (*res).load_u64(1);
             } else {
@@ -330,14 +332,14 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         },
-        "Less" => {
+        b'\x0E' => {
             execute_math_operation(
                 Less {},
                 buffers,
-                line.args[0].clone(),
-                line.args[1].clone(),
-                line.args[2].clone(),
-                line.args[3].clone(),
+                &line.args[0],
+                &line.args[1],
+                &line.args[2],
+                &line.args[3],
             );
             *gas_used += 1;
             VmInstructionResult {
@@ -345,14 +347,14 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         }
-        "And" => {
+        b'\x0F' => {
             execute_math_operation(
                 And {},
                 buffers,
-                line.args[0].clone(),
-                line.args[1].clone(),
-                line.args[2].clone(),
-                line.args[3].clone(),
+                &line.args[0],
+                &line.args[1],
+                &line.args[2],
+                &line.args[3],
             );
             *gas_used += 1;
             VmInstructionResult {
@@ -360,14 +362,14 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         }
-        "Or" => {
+        b'\x10' => {
             execute_math_operation(
                 Or {},
                 buffers,
-                line.args[0].clone(),
-                line.args[1].clone(),
-                line.args[2].clone(),
-                line.args[3].clone(),
+                &line.args[0],
+                &line.args[1],
+                &line.args[2],
+                &line.args[3],
             );
             *gas_used += 1;
             VmInstructionResult {
@@ -375,14 +377,14 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         }
-        "Not" => {
+        b'\x11' => {
             execute_math_operation(
                 Not {},
                 buffers,
-                line.args[0].clone(),
-                "".into(),
-                line.args[1].clone(),
-                line.args[2].clone(),
+                &line.args[0],
+                &vec![],
+                &line.args[1],
+                &line.args[2],
             );
             *gas_used += 1;
             VmInstructionResult {
@@ -390,13 +392,13 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         }
-        "App" => {
-            if !vm_check_buffer_initialization(buffers, line.args[0].clone())
-                || !vm_check_buffer_initialization(buffers, line.args[1].clone())
+        b'\x12' => {
+            if !vm_check_buffer_initialization(buffers, &line.args[0])
+                || !vm_check_buffer_initialization(buffers, &line.args[1])
             {
-                vm_throw_local_error(buffers, line.args[1].clone())
+                vm_throw_local_error(buffers, &line.args[1])
             }
-            let y = vm_access_buffer_contents(buffers, line.args[1].clone(), line.args[2].clone());
+            let y = vm_access_buffer_contents(buffers, &line.args[1], &line.args[2]);
             if let Some(x) = buffers.get_mut(&(line.args[0].clone())) {
                 x.contents.extend(y);
                 *gas_used += x.contents.len() as i64 / 10;
@@ -407,21 +409,21 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         }
-        "Slice" => unsafe {
-            if !vm_check_buffer_initialization(buffers, line.args[0].clone())
-                || !vm_check_buffer_initialization(buffers, line.args[1].clone())
-                || !vm_check_buffer_initialization(buffers, line.args[2].clone())
+        b'\x13' => unsafe {
+            if !vm_check_buffer_initialization(buffers, &line.args[0])
+                || !vm_check_buffer_initialization(buffers, &line.args[1])
+                || !vm_check_buffer_initialization(buffers, &line.args[2])
             {
-                vm_throw_local_error(buffers, line.args[3].clone())
+                vm_throw_local_error(buffers, &line.args[3])
             }
-            let start_buf = (*vm_access_buffer(buffers, line.args[1].clone(), line.args[3].clone()))
+            let start_buf = (*vm_access_buffer(buffers, &line.args[1], &line.args[3]))
                 .as_u64()
                 .unwrap() as usize;
-            let end_buf = (*vm_access_buffer(buffers, line.args[2].clone(), line.args[3].clone()))
+            let end_buf = (*vm_access_buffer(buffers, &line.args[2], &line.args[3]))
                 .as_u64()
                 .unwrap() as usize;
             let buf_to_slice =
-                vm_access_buffer_contents(buffers, line.args[0].clone(), line.args[3].clone());
+                vm_access_buffer_contents(buffers, &line.args[0], &line.args[3]);
             let sliced_buf = buf_to_slice[start_buf..end_buf].to_vec();
             if let Some(x) = buffers.get_mut(&(line.args[0].clone())) {
                 x.contents = sliced_buf;
@@ -433,16 +435,16 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         },
-        "Shiftl" => unsafe {
-            if !vm_check_buffer_initialization(buffers, line.args[0].clone())
-                || !vm_check_buffer_initialization(buffers, line.args[1].clone())
+        b'\x14' => unsafe {
+            if !vm_check_buffer_initialization(buffers, &line.args[0])
+                || !vm_check_buffer_initialization(buffers, &line.args[1])
             {
-                vm_throw_local_error(buffers, line.args[2].clone())
+                vm_throw_local_error(buffers, &line.args[2])
             }
             let mut buf_to_shift =
-                vm_access_buffer_contents(buffers, line.args[0].clone(), line.args[2].clone());
+                vm_access_buffer_contents(buffers, &line.args[0], &line.args[2]);
             let shift_amount =
-                (*vm_access_buffer(buffers, line.args[1].clone(), line.args[2].clone()))
+                (*vm_access_buffer(buffers, &line.args[1], &line.args[2]))
                     .as_u64()
                     .unwrap() as usize;
             buf_to_shift.drain(buf_to_shift.len() - shift_amount..);
@@ -457,16 +459,16 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         },
-        "Shiftr" => unsafe {
-            if !vm_check_buffer_initialization(buffers, line.args[0].clone())
-                || !vm_check_buffer_initialization(buffers, line.args[1].clone())
+        b'\x15' => unsafe {
+            if !vm_check_buffer_initialization(buffers, &line.args[0])
+                || !vm_check_buffer_initialization(buffers, &line.args[1])
             {
-                vm_throw_local_error(buffers, line.args[1].clone())
+                vm_throw_local_error(buffers, &line.args[1])
             }
             let mut buf_to_shift =
-                vm_access_buffer_contents(buffers, line.args[0].clone(), line.args[2].clone());
+                vm_access_buffer_contents(buffers, &line.args[0], &line.args[2]);
             let shift_amount =
-                (*vm_access_buffer(buffers, line.args[1].clone(), line.args[2].clone()))
+                (*vm_access_buffer(buffers, &line.args[1], &line.args[2]))
                     .as_u64()
                     .unwrap() as usize;
             buf_to_shift.drain(0..shift_amount);
@@ -481,22 +483,22 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         },
-        "Jmp" => {
+        b'\x16' => {
             *gas_used += 1;
             VmInstructionResult {
                 exit_details: None,
-                next_pc: line.args[0].parse::<usize>().unwrap() - 1,
+                next_pc: to_u64(&line.args[0]).unwrap() as usize - 1,
             }
         }
-        "JmpCond" => {
-            if !vm_check_buffer_initialization(buffers, line.args[0].clone()) {
-                vm_throw_local_error(buffers, line.args[2].clone())
+        b'\x17' => {
+            if !vm_check_buffer_initialization(buffers, &line.args[0]) {
+                vm_throw_local_error(buffers, &line.args[2])
             }
             *gas_used += 2;
             if buffers.get(&line.args[0]).unwrap().as_u64() != Ok(0) {
                 VmInstructionResult {
                     exit_details: None,
-                    next_pc: line.args[1].parse::<usize>().unwrap() - 1,
+                    next_pc: to_u64(&line.args[1]).unwrap() as usize - 1,
                 }
             } else {
                 VmInstructionResult {
@@ -505,19 +507,19 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 }
             }
         }
-        "Call" => {
+        b'\x18' => {
             stack.push(buffers, pc + 1);
             VmInstructionResult {
                 exit_details: None,
-                next_pc: line.args[0].parse::<usize>().unwrap() - 1,
+                next_pc: to_u64(&line.args[0]).unwrap() as usize - 1,
             }
         }
-        "Ret" => unsafe {
+        b'\x19' => unsafe {
             let frame = stack.pop();
             let return_value_tmp = (*vm_access_buffer(
                 buffers,
-                "00000001".parse().unwrap(),
-                "00000000".parse().unwrap(),
+                &vec![0, 0, 0, 1],
+                &vec![0, 0, 0, 0]
             ))
             .clone();
             *buffers = frame.buffers;
@@ -527,17 +529,17 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: frame.origin,
             }
         },
-        "Stdout" => {
-            if !vm_check_buffer_initialization(buffers, line.args[0].clone()) {
-                vm_throw_local_error(buffers, line.args[1].clone())
+        b'\x1A' => {
+            if !vm_check_buffer_initialization(buffers, &line.args[0]) {
+                vm_throw_local_error(buffers, &line.args[1])
             }
             println!(
                 "{:?}",
-                vm_access_buffer_contents(buffers, line.args[0].clone(), line.args[1].clone())
+                vm_access_buffer_contents(buffers, &line.args[0], &line.args[1])
             );
             out.push_str(&format!(
                 "{:?}\n",
-                vm_access_buffer_contents(buffers, line.args[0].clone(), line.args[1].clone())
+                vm_access_buffer_contents(buffers, &line.args[0], &line.args[1])
             ));
             *gas_used += 1;
             VmInstructionResult {
@@ -545,12 +547,12 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         }
-        "PrintStr" => unsafe {
-            if !vm_check_buffer_initialization(buffers, line.args[0].clone()) {
-                vm_throw_local_error(buffers, line.args[1].clone())
+        b'\x1B' => unsafe {
+            if !vm_check_buffer_initialization(buffers, &line.args[0]) {
+                vm_throw_local_error(buffers, &line.args[1])
             }
             let str = std::str::from_utf8(
-                &(*vm_access_buffer(buffers, line.args[0].clone(), line.args[1].clone())).contents,
+                &(*vm_access_buffer(buffers, &line.args[0], &line.args[1])).contents,
             )
             .unwrap();
             println!("{}", str);
@@ -561,13 +563,13 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         },
-        "Stderr" => {
-            if !vm_check_buffer_initialization(buffers, line.args[0].clone()) {
-                vm_throw_local_error(buffers, line.args[1].clone())
+        b'\x1C' => {
+            if !vm_check_buffer_initialization(buffers, &line.args[0]) {
+                vm_throw_local_error(buffers, &line.args[1])
             }
             eprintln!(
                 "{:?}",
-                vm_access_buffer_contents(buffers, line.args[0].clone(), line.args[1].clone())
+                vm_access_buffer_contents(buffers, &line.args[0], &line.args[1])
             );
             *gas_used += 1;
             VmInstructionResult {
@@ -575,14 +577,14 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         }
-        "SetCnst" => unsafe {
-            if !vm_check_buffer_initialization(buffers, line.args[0].clone()) {
-                vm_throw_local_error(buffers, line.args[2].clone())
+        b'\x1D' => unsafe {
+            if !vm_check_buffer_initialization(buffers, &line.args[0]) {
+                vm_throw_local_error(buffers, &line.args[2])
             }
             let bfr_ptr: *mut Buffer =
-                vm_access_buffer(buffers, line.args[0].clone(), line.args[2].clone());
+                vm_access_buffer(buffers, &line.args[0], &line.args[2]);
             (*bfr_ptr).contents =
-                hex::decode(line.args[1].clone()).expect("Failed to parse raw hex value");
+                line.args[1].clone();
             *gas_used += (*bfr_ptr).contents.len() as i64 / 10;
             *gas_used += 2;
             VmInstructionResult {
@@ -592,8 +594,8 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
         },
         // Tx was removed due to ZK incompatibility.
         // It may be added again in the future.
-        "Tx" => {
-            panic!("ZK incompatible.");
+        b'\x1E' => {
+            unimplemented!("ZK incompatible.");
             // let sender_bytes =
             //     vm_access_buffer_contents(buffers, line.args[0].clone(), line.args[3].clone());
             // let sender = match std::string::String::from_utf8(sender_bytes) {
@@ -630,9 +632,9 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
         }
 
         // GetNthBlock and GetNthTx were removed due to ZK incompatibility and slow performance.
-        "ChainLen" => {
-            if !vm_check_buffer_initialization(buffers, line.args[0].clone()) {
-                vm_throw_local_error(buffers, line.args[1].clone());
+        b'\x1F' => {
+            if !vm_check_buffer_initialization(buffers, &line.args[0]) {
+                vm_throw_local_error(buffers, &line.args[1]);
             }
             let buf = buffers.get_mut(&line.args[0]).unwrap();
             let len = blockutil_interface.get_blockchain_len();
@@ -643,16 +645,17 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         }
-        "UpdateState" => {
-            if !vm_check_buffer_initialization(buffers, line.args[0].clone())
-                || !vm_check_buffer_initialization(buffers, line.args[1].clone())
+        b'\x20' => {
+            if !vm_check_buffer_initialization(buffers, &line.args[0])
+                || !vm_check_buffer_initialization(buffers, &line.args[1])
             {
-                vm_throw_local_error(buffers, line.args[2].clone());
+                vm_throw_local_error(buffers, &line.args[2]);
             }
-            let location = buffers.get(&line.args[0]).unwrap().as_u64().unwrap() as usize;
+            let location_vec_u8 = 
+                vm_access_buffer_contents(buffers, &line.args[0], &line.args[2]);
             let contents_vec_u8 =
-                vm_access_buffer_contents(buffers, line.args[1].clone(), line.args[2].clone());
-            let full_location = format!("{}{}", contract_hash.clone(), location);
+                vm_access_buffer_contents(buffers, &line.args[1], &line.args[2]);
+            let full_location = format!("{}{}", contract_hash.clone(), hex::encode(&location_vec_u8));
             let mut out_sub = std::string::String::new();
             state_manager.write(full_location, contents_vec_u8.clone(), &mut out_sub);
             out.push_str(&out_sub);
@@ -663,18 +666,19 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         }
-        "UpdateStateExternal" => {
-            if !vm_check_buffer_initialization(buffers, line.args[0].clone())
-                || !vm_check_buffer_initialization(buffers, line.args[1].clone())
+        b'\x21' => {
+            if !vm_check_buffer_initialization(buffers, &line.args[0])
+                || !vm_check_buffer_initialization(buffers, &line.args[1])
             {
-                vm_throw_local_error(buffers, line.args[2].clone());
+                vm_throw_local_error(buffers, &line.args[2]);
             }
-            let location = buffers.get(&line.args[0]).unwrap().as_u64().unwrap() as usize;
+            let location_vec_u8 =
+                vm_access_buffer_contents(buffers, &line.args[0], &line.args[2]);
             let contents_vec_u8 =
-                vm_access_buffer_contents(buffers, line.args[1].clone(), line.args[2].clone());
+                vm_access_buffer_contents(buffers, &line.args[1], &line.args[2]);
             let mut out_sub = std::string::String::new();
             state_manager.write(
-                format!("{}", location),
+                format!("{}", hex::encode(&location_vec_u8)),
                 contents_vec_u8.clone(),
                 &mut out_sub,
             );
@@ -686,16 +690,15 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         }
-        "GetFromState" => unsafe {
-            if !vm_check_buffer_initialization(buffers, line.args[0].clone())
-                || !vm_check_buffer_initialization(buffers, line.args[1].clone())
+        b'\x22' => {
+            if !vm_check_buffer_initialization(buffers, &line.args[0])
+                || !vm_check_buffer_initialization(buffers, &line.args[1])
             {
-                vm_throw_local_error(buffers, line.args[2].clone());
+                vm_throw_local_error(buffers, &line.args[2]);
             }
-            let location = (*vm_access_buffer(buffers, line.args[0].clone(), line.args[1].clone()))
-                .as_u64()
-                .unwrap() as usize;
-            let location = format!("{}{}", contract_hash.clone(), location);
+            let location_vec_u8 =
+                vm_access_buffer_contents(buffers, &line.args[0], &line.args[2]);
+            let location = format!("{}{}", contract_hash.clone(), hex::encode(&location_vec_u8));
             let contents_vec_u8 = state_manager.get(location).unwrap();
             let dst_buffer = buffers.get_mut(&line.args[1]).unwrap();
             dst_buffer.contents = contents_vec_u8;
@@ -705,15 +708,15 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         },
-        "GetFromStateExternal" => {
-            if !vm_check_buffer_initialization(buffers, line.args[0].clone())
-                || !vm_check_buffer_initialization(buffers, line.args[1].clone())
+        b'\x23' => {
+            if !vm_check_buffer_initialization(buffers, &line.args[0])
+                || !vm_check_buffer_initialization(buffers, &line.args[1])
             {
-                vm_throw_local_error(buffers, line.args[2].clone());
+                vm_throw_local_error(buffers, &line.args[2]);
             }
             let location_vec_u8 =
-                &vm_access_buffer_contents(buffers, line.args[0].clone(), line.args[1].clone());
-            let location = hex::encode(location_vec_u8);
+                vm_access_buffer_contents(buffers, &line.args[0], &line.args[2]);
+            let location = hex::encode(&location_vec_u8);
             let contents_vec_u8: Vec<u8> = state_manager.get(location).unwrap();
             let dst_buffer = buffers.get_mut(&line.args[1]).unwrap();
             dst_buffer.contents = contents_vec_u8;
@@ -723,16 +726,15 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         }
-        "GetFromStateSync" => unsafe {
-            if !vm_check_buffer_initialization(buffers, line.args[0].clone())
-                || !vm_check_buffer_initialization(buffers, line.args[1].clone())
+        b'\x24' => {
+            if !vm_check_buffer_initialization(buffers, &line.args[0])
+                || !vm_check_buffer_initialization(buffers, &line.args[1])
             {
-                vm_throw_local_error(buffers, line.args[2].clone());
+                vm_throw_local_error(buffers, &line.args[2]);
             }
-            let location = (*vm_access_buffer(buffers, line.args[0].clone(), line.args[1].clone()))
-                .as_u64()
-                .unwrap() as usize;
-            let location = format!("{}{}", contract_hash.clone(), location);
+            let location_vec_u8 =
+                vm_access_buffer_contents(buffers, &line.args[0], &line.args[1]);
+            let location = format!("{}{}", contract_hash.clone(), hex::encode(&location_vec_u8));
             let contents_vec_u8 = state_manager.get_sync(location).unwrap();
             let dst_buffer = buffers.get_mut(&line.args[1]).unwrap();
             dst_buffer.contents = contents_vec_u8;
@@ -742,16 +744,15 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         },
-        "GetFromStateExternalSync" => {
-            if !vm_check_buffer_initialization(buffers, line.args[0].clone())
-                || !vm_check_buffer_initialization(buffers, line.args[1].clone())
+        b'\x25' => {
+            if !vm_check_buffer_initialization(buffers, &line.args[0])
+                || !vm_check_buffer_initialization(buffers, &line.args[1])
             {
-                vm_throw_local_error(buffers, line.args[2].clone());
+                vm_throw_local_error(buffers, &line.args[2]);
             }
             let location_vec_u8 =
-                &vm_access_buffer_contents(buffers, line.args[0].clone(), line.args[1].clone());
-            let location = hex::encode(location_vec_u8);
-            let contents_vec_u8: Vec<u8> = state_manager.get_sync(location).unwrap();
+                vm_access_buffer_contents(buffers, &line.args[0], &line.args[1]);
+            let contents_vec_u8: Vec<u8> = state_manager.get_sync(hex::encode(&location_vec_u8)).unwrap();
             let dst_buffer = buffers.get_mut(&line.args[1]).unwrap();
             dst_buffer.contents = contents_vec_u8;
             *gas_used += 2;
@@ -760,25 +761,25 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         }
-        "QueryOracle" => unsafe {
+        b'\x26' => unsafe {
             *gas_used += 10;
-            if !vm_check_buffer_initialization(buffers, line.args[0].clone())
-                || !vm_check_buffer_initialization(buffers, line.args[1].clone())
-                || !vm_check_buffer_initialization(buffers, line.args[2].clone())
+            if !vm_check_buffer_initialization(buffers, &line.args[0])
+                || !vm_check_buffer_initialization(buffers, &line.args[1])
+                || !vm_check_buffer_initialization(buffers, &line.args[2])
             {
-                vm_throw_local_error(buffers, line.args[3].clone());
+                vm_throw_local_error(buffers, &line.args[3]);
             }
             let query_type =
-                (*vm_access_buffer(buffers, line.args[0].clone(), line.args[3].clone()))
+                (*vm_access_buffer(buffers, &line.args[0], &line.args[3]))
                     .as_u64()
                     .unwrap();
             let query_body =
-                vm_access_buffer_contents(buffers, line.args[1].clone(), line.args[3].clone());
+                vm_access_buffer_contents(buffers, &line.args[1], &line.args[3]);
             let query_result = blockutil_interface.query_oracle(query_type, query_body);
             if !query_result.1 {
-                vm_throw_local_error(buffers, line.args[3].clone());
+                vm_throw_local_error(buffers, &line.args[3]);
             }
-            let res_bfr = vm_access_buffer(buffers, line.args[0].clone(), line.args[3].clone());
+            let res_bfr = vm_access_buffer(buffers, &line.args[0], &line.args[3]);
             (*res_bfr).contents = query_result.0;
             *gas_used += 10;
             VmInstructionResult {
@@ -786,31 +787,32 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         },
-        "Invoke" => unsafe {
+        b'\x27' => unsafe {
             *gas_used += 3;
-            let location = line.args[0]
-                .parse::<u64>()
-                .expect("Failed to parse location");
+            let encoded = hex::encode(&line.args[0]);
             let contents = blockutil_interface
-                .read_contract(location)
+                .read_contract(encoded.parse().unwrap())
                 .expect("Failed to read invoked contract");
             let mut tree = build_syntax_tree();
-            tree.create(contents.clone());
+            tree.create(&contents);
             let mut hasher = Sha256::new();
             hasher.update(contents);
-            let hash = hasher.finalize();
-            let child_hash = hex::encode(hash);
             stack.push(buffers, pc + 1);
             let mut child_pc = 0;
             buffers.clear();
+            let mut flush_out = std::string::String::new();
+            state_manager.flush(&mut flush_out);
+            out.push_str(flush_out.as_str());
+            let mut child_state_manager = state_manager.clone();
+            child_state_manager.onchain_state.update_prefix(encoded.clone());
             vm_simulate(
                 tree,
                 buffers,
                 stack,
-                state_manager,
+                &mut child_state_manager,
                 gas_used,
                 blockutil_interface,
-                child_hash.into(),
+                encoded.into(),
                 gas_limit,
                 &mut child_pc,
                 sender,
@@ -819,8 +821,8 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
             let frame = stack.pop();
             let return_value_tmp = vm_access_buffer(
                 buffers,
-                "00000001".parse().unwrap(),
-                "00000000".parse().unwrap(),
+                &vec![0, 0, 0, 1],
+                &vec![0, 0, 0, 0],
             );
             *buffers = frame.buffers;
             if return_value_tmp != VM_NIL as *mut Buffer {
@@ -831,19 +833,19 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
                 next_pc: pc + 1,
             }
         },
-        "GetSender" => unsafe {
+        b'\x28' => unsafe {
             *gas_used += 1;
-            if !vm_check_buffer_initialization(buffers, line.args[0].clone()) {
-                vm_throw_local_error(buffers, line.args[1].clone());
+            if !vm_check_buffer_initialization(buffers, &line.args[0]) {
+                vm_throw_local_error(buffers, &line.args[1]);
             }
-            (*vm_access_buffer(buffers, line.args[0].clone(), line.args[1].clone())).contents =
+            (*vm_access_buffer(buffers, &line.args[0], &line.args[1])).contents =
                 sender.to_vec();
             VmInstructionResult {
                 exit_details: None,
                 next_pc: pc + 1,
             }
         },
-        &_ => {
+        _ => {
             vm_throw_global_error(buffers);
             VmInstructionResult {
                 exit_details: None,
@@ -853,9 +855,9 @@ pub fn vm_execute_instruction<A: State, B: State, C: State, D: BlockUtilInterfac
     }
 }
 
-pub fn vm_simulate<A: State, B: State, C: State, D: BlockUtilInterface + Clone>(
+pub fn vm_simulate<A: State + Clone, B: State + Clone, C: State + Clone, D: BlockUtilInterface + Clone>(
     syntax_tree: SyntaxTree,
-    buffers: &mut FxHashMap<String, Buffer>,
+    buffers: &mut FxHashMap<Vec<u8>, Buffer>,
     stack: &mut Stack,
     state_manager: &mut StateManager<A, B, C>,
     gas_used: &mut i64,
@@ -904,7 +906,7 @@ pub fn vm_simulate<A: State, B: State, C: State, D: BlockUtilInterface + Clone>(
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct VmRunDetails {
-    pub contract_contents: Vec<std::string::String>,
+    pub contract_contents: Vec<Vec<u8>>,
     pub contract_hash: Vec<std::string::String>,
     pub gas_limits: Vec<i64>,
     pub senders: Vec<Vec<u8>>,
@@ -928,7 +930,7 @@ pub struct ZkInfo {
 }
 
 pub fn run_vm<A, B, C, D>(
-    contract_contents: String,
+    contract_contents: Vec<u8>,
     contract_hash: String,
     gas_limit: i64,
     sender: Vec<u8>,
@@ -936,15 +938,15 @@ pub fn run_vm<A, B, C, D>(
     interface: &mut D,
 ) -> (i64, i64, String)
 where
-    A: State,
-    B: State,
-    C: State,
+    A: State + Clone,
+    B: State + Clone,
+    C: State + Clone,
     D: BlockUtilInterface + Clone,
 {
     let mut tree = build_syntax_tree();
-    tree.create(contract_contents);
-    let mut buffers: FxHashMap<String, Buffer> = FxHashMap::default();
-    buffers.insert("00000000".parse().unwrap(), Buffer { contents: vec![] });
+    tree.create(&contract_contents);
+    let mut buffers: FxHashMap<Vec<u8>, Buffer> = FxHashMap::default();
+    buffers.insert(vec![0, 0, 0, 0], Buffer { contents: vec![] });
     let mut stack = Stack { frames: vec![] };
     let mut pc: usize = 0;
     let mut gas_used = 0;

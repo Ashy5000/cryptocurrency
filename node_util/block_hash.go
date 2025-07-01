@@ -21,7 +21,7 @@ type OldTransition struct {
 }
 
 type OldContract struct {
-	Contents string
+	Contents []byte
 	Parties  []ContractParty
 	GasUsed  float64
 }

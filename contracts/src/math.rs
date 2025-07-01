@@ -122,30 +122,30 @@ impl MathOperation for Less {
 
 pub(crate) fn execute_math_operation(
     operation: impl MathOperation,
-    buffers: &mut FxHashMap<String, Buffer>,
-    a: String,
-    b: String,
-    res: String,
-    err: String,
+    buffers: &mut FxHashMap<Vec<u8>, Buffer>,
+    a: &Vec<u8>,
+    b: &Vec<u8>,
+    res: &Vec<u8>,
+    err: &Vec<u8>,
 ) {
-    let status_a = vm::vm_check_buffer_initialization(buffers, a.clone());
+    let status_a = vm::vm_check_buffer_initialization(buffers, &a);
     let mut status_b = true;
     if std::any::type_name_of_val(&operation) != "contracts::math::Not" {
-        status_b = vm::vm_check_buffer_initialization(buffers, b.clone());
+        status_b = vm::vm_check_buffer_initialization(buffers, &b);
         if !status_b {
-            vm::vm_throw_local_error(buffers, err.clone());
+            vm::vm_throw_local_error(buffers, &err);
         }
     }
-    let status_res = vm::vm_check_buffer_initialization(buffers, res.clone());
+    let status_res = vm::vm_check_buffer_initialization(buffers, &res);
     if !status_a || !status_b || !status_res {
-        vm::vm_throw_local_error(buffers, err);
+        vm::vm_throw_local_error(buffers, &err);
     }
-    let buffer_0 = buffers.get(&a).unwrap();
+    let buffer_0 = buffers.get(a).unwrap();
     let mut buffer_1 = &Buffer {
         contents: vec![0, 0, 0, 0, 0, 0, 0, 0],
     };
     if std::any::type_name_of_val(&operation) != "contracts::math::Not" {
-        buffer_1 = buffers.get(&b).unwrap();
+        buffer_1 = buffers.get(b).unwrap();
     }
     let buffer_0_u64 = buffer_0.as_u64().unwrap();
     let result_u64 = if std::any::type_name_of_val(&operation) != "contracts::math::Not" {
@@ -154,6 +154,6 @@ pub(crate) fn execute_math_operation(
     } else {
         operation.execute(buffer_0_u64, 0)
     };
-    let buffer_result = buffers.get_mut(&res).unwrap();
+    let buffer_result = buffers.get_mut(res).unwrap();
     buffer_result.load_u64(result_u64.expect("Error storing result in buffer"));
 }

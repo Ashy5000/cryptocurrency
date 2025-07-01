@@ -380,18 +380,18 @@ func QueryOracleCmd(fields []string) {
 }
 
 func ReadSmartContractCmd(fields []string) {
-	loc, err := strconv.ParseUint(fields[1], 10, 64)
-	if err != nil {
-		panic(err)
-	}
 	state := CalculateCurrentState()
 	// Zen
-	contract, ok := GetValue(state.ZenContracts, strconv.FormatUint(loc, 10))
+	contract, ok := GetValue(state.ZenContracts, fields[1])
 	if ok {
 		fmt.Println(string(contract))
 		return
 	}
 	// Legacy (fallback)
+	loc, err := strconv.ParseUint(fields[1], 16, 64)
+	if err != nil {
+		panic(err)
+	}
 	for l, c := range state.LegacyContracts {
 		if l == loc {
 			fmt.Println(c.Contents)

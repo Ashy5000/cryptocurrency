@@ -3,6 +3,7 @@ package node_util
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"sort"
 )
 
 type MerkleNode struct {
@@ -13,11 +14,23 @@ type MerkleNode struct {
 	Key      string
 }
 
+type MerkleKVPair struct {
+	Key byte
+	Val int
+}
+
 func HashNode(tree []MerkleNode, nodeIndex int) string {
 	hasher := sha256.New()
 	hasher.Write(tree[nodeIndex].Data)
-	for _, index := range tree[nodeIndex].Children {
-		hasher.Write([]byte(tree[index].Hash))
+	pairs := []MerkleKVPair{}
+	for k, v := range tree[nodeIndex].Children {
+		pairs = append(pairs, MerkleKVPair{Key: k, Val: v})
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		return pairs[i].Key < pairs[j].Key
+	})
+	for _, k := range pairs {
+		hasher.Write([]byte(tree[k.Val].Hash))
 	}
 	hash := hasher.Sum(nil)
 	return hex.EncodeToString(hash)

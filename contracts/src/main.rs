@@ -17,6 +17,7 @@ mod syntax_tree;
 mod vm;
 
 mod msgpack;
+mod conversion;
 
 use crate::blockutil::NodeBlockUtilInterface;
 use crate::msgpack::{decode_pending_state, PendingState};

@@ -11,7 +11,7 @@ This program is distributed in the hope that it will be useful, but WITHOUT ANY 
 You should have received a copy of the GNU General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
 pub struct StackFrame {
-    pub buffers: FxHashMap<String, Buffer>,
+    pub buffers: FxHashMap<Vec<u8>, Buffer>,
     pub origin: usize,
 }
 
@@ -20,7 +20,7 @@ pub struct Stack {
 }
 
 impl Stack {
-    pub fn push(&mut self, buffers_param: &FxHashMap<String, Buffer>, origin: usize) {
+    pub fn push(&mut self, buffers_param: &FxHashMap<Vec<u8>, Buffer>, origin: usize) {
         let frame = StackFrame {
             buffers: buffers_param.clone(),
             origin,

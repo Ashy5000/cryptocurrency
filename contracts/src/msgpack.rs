@@ -26,8 +26,12 @@ impl State for PendingState {
     fn get(&mut self, location: String) -> Result<Vec<u8>, String> {
         Ok(self.data[&location].clone())
     }
-    fn dump(&self) -> FxHashMap<String, Vec<u8>> {
+    fn dump(&mut self) -> FxHashMap<String, Vec<u8>> {
         self.data.clone()
+    }
+
+    fn update_prefix(&mut self, prefix: String) {
+        panic!("PendingState does not use a prefix.");
     }
 }
 

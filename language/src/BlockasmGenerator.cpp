@@ -102,7 +102,7 @@ std::string BlockasmGenerator::GenerateBlockasm(ControlModule &cm) {
                             }
                         }
                         blockasm << "InitBfr 0x" << std::setfill('0') << std::setw(8) << std::hex << nextAllocatedLocation << " 0x00000000" << std::endl;
-                        blockasm << "SetCnst 0x" << std::setfill('0') << std::setw(8) << std::hex << nextAllocatedLocation << " 0x00";
+                        blockasm << "SetCnst 0x" << std::setfill('0') << std::setw(8) << std::hex << nextAllocatedLocation << " 0x";
                         blockasm << std::setfill('0') << std::setw(14) << std::hex << location << " 0x00000000" << std::endl;
                         nextAllocatedLocation++;
                         blockasm << "UpdateState 0x" << std::setfill('0') << std::setw(8) << std::hex << nextAllocatedLocation - 1 << " 0x";

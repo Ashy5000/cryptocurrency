@@ -41,10 +41,13 @@ const std::vector SYSTEM_FUNCTIONS = {
             if(exprLoc >= nextAllocatedLocation) {
                 nextAllocatedLocation = exprLoc + 1;
             }
-            blockasm << "InitBfr 0x" << std::setw(8) << std::hex << nextAllocatedLocation++ << " 0x00000000" << std::endl;
-            blockasm << "SetCnst 0x" << std::setw(8) << std::hex << nextAllocatedLocation - 1 << " 0x01fff0 0x00000000" << std::endl;
-            blockasm << "UpdateState 0x" << std::setfill('0') << std::setw(8) << std::hex << exprLoc << " 0x";
-            blockasm << std::setw(8) << std::hex << nextAllocatedLocation - 1 << " 0x00000000" << std::endl;
+            int locLoc = nextAllocatedLocation++;
+            int valLoc = nextAllocatedLocation++;
+            blockasm << "InitBfr 0x" << std::setw(8) << std::hex << locLoc << " 0x00000000" << std::endl;
+            blockasm << "SetCnst 0x" << std::setw(8) << std::hex << locLoc << " 0x0000000001fff0 0x00000000" << std::endl;
+            blockasm << "InitBfr 0x" << std::setw(8) << std::hex << valLoc << " 0x00000000" << std::endl;
+            blockasm << "UpdateState 0x" << std::setfill('0') << std::setw(8) << std::hex << locLoc << " 0x";
+            blockasm << std::setw(8) << std::hex << exprLoc << " 0x00000000" << std::endl;
         },
         "contract",
         "return"
@@ -105,7 +108,7 @@ const std::vector SYSTEM_FUNCTIONS = {
                 std::cerr << "Expected integer as value" << std::endl;
             }
             blockasm << "SetCnst 0x" << std::setfill('0') << std::setw(8) << std::hex << vars[indexToRename].location << " 0x";
-            blockasm << std::setfill('0') << std::setw(16) << std::hex << val << " 0x00000000" << std::endl;
+            blockasm << std::setfill('0') << std::setw(8) << std::hex << val << " 0x00000000" << std::endl;
         },
         "memory",
         "set"

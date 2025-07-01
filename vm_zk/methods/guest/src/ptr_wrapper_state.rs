@@ -1,6 +1,7 @@
 use contracts::state::State;
 use rustc_hash::FxHashMap;
 
+#[derive(Clone)]
 pub(crate) struct PtrWrapperState<T> {
     pub(crate) ptr: *mut T,
 }
@@ -20,7 +21,11 @@ impl<T: State> State for PtrWrapperState<T> {
         unsafe { (*self.ptr).get(location) }
     }
 
-    fn dump(&self) -> FxHashMap<String, Vec<u8>> {
+    fn dump(&mut self) -> FxHashMap<String, Vec<u8>> {
         unimplemented!()
+    }
+
+    fn update_prefix(&mut self, prefix: String) {
+        unsafe { (*self.ptr).update_prefix(prefix) }
     }
 }

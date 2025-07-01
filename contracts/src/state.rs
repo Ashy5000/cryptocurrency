@@ -5,11 +5,25 @@ use rustc_hash::FxHashMap;
 pub trait State {
     fn write(&mut self, location: String, contents: Vec<u8>, out: &mut String);
     fn get(&mut self, location: String) -> Result<Vec<u8>, String>;
-    fn dump(&self) -> FxHashMap<String, Vec<u8>>;
+    fn dump(&mut self) -> FxHashMap<String, Vec<u8>>;
+    fn update_prefix(&mut self, prefix: String);
 }
 
+#[derive(Clone)]
+struct CachedBuffer {
+    contents: Vec<u8>,
+    exported: bool,
+}
+
+impl CachedBuffer {
+    pub fn new(contents: Vec<u8>) -> Self {
+        Self { contents, exported: false }
+    }
+}
+
+#[derive(Clone)]
 pub struct CachedState {
-    contents: FxHashMap<String, Vec<u8>>,
+    contents: FxHashMap<String, CachedBuffer>,
 }
 
 impl CachedState {
@@ -22,21 +36,32 @@ impl CachedState {
 
 impl State for CachedState {
     fn write(&mut self, location: String, contents: Vec<u8>, _out: &mut String) {
-        self.contents.insert(location, contents);
+        self.contents.insert(location, CachedBuffer::new(contents));
     }
     fn get(&mut self, location: String) -> Result<Vec<u8>, String> {
         if !self.contents.contains_key(&location) {
             Err("Could not find key in cache".parse().unwrap())
         } else {
-            Ok(self.contents[&location].clone())
+            Ok(self.contents[&location].contents.clone())
         }
     }
 
-    fn dump(&self) -> FxHashMap<String, Vec<u8>> {
-        self.contents.clone()
+    fn dump(&mut self) -> FxHashMap<String, Vec<u8>> {
+        let mut res = FxHashMap::default();
+        for (location, buffer) in self.contents.iter_mut() {
+            if !buffer.exported {
+                res.insert(location.to_string(), buffer.contents.clone());
+                buffer.exported = true;
+            }
+        }
+        res
+    }
+    fn update_prefix(&mut self, prefix: String) {
+        panic!("CachedState does not use a prefix.");
     }
 }
 
+#[derive(Clone)]
 pub struct OnchainState {
     blockutil_interface: NodeBlockUtilInterface,
     prefix: String,
@@ -82,11 +107,15 @@ impl State for OnchainState {
         }
     }
 
-    fn dump(&self) -> FxHashMap<String, Vec<u8>> {
+    fn dump(&mut self) -> FxHashMap<String, Vec<u8>> {
         panic!("Not implemented.");
+    }
+    fn update_prefix(&mut self, prefix: String) {
+        self.prefix = prefix;
     }
 }
 
+#[derive(Clone)]
 pub struct StateManager<A: State, B: State, C: State> {
     pub cached_state: A,
     pub onchain_state: B,
@@ -124,7 +153,7 @@ impl<A: State, B: State, C: State> StateManager<A, B, C> {
                 Err("Could not get from onchain state".to_string())
             } else {
                 self.cached_state
-                    .write(location, onchain_res.clone().unwrap(), &mut String::new());
+                    .write(location, onchain_res.clone()?, &mut String::new());
                 onchain_res
             }
         }

@@ -25,41 +25,8 @@ func HandleMineRequest(_ http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		panic(err)
 	}
-	body := string(bodyBytes)
-	fields := strings.Split(body, "$")
-	senderStr := fields[0]
-	senderKey := DecodePublicKey(senderStr)
-	recipientStr := fields[1]
-	recipientKey := DecodePublicKey(recipientStr)
-	amount, err := strconv.ParseFloat(fields[2], 64)
-	if err != nil {
-		panic(err)
-	}
-	timestampInt, err := strconv.ParseInt(fields[4], 10, 64)
-	if err != nil {
-		panic(err)
-	}
-	timestamp := time.Unix(0, timestampInt)
-	sStr := fields[3]
-	var s Signature
-	err = json.Unmarshal([]byte(sStr), &s)
-	if err != nil {
-		panic(err)
-	}
-	contractsStr := fields[5]
-	var contracts []Contract
-	err = json.Unmarshal([]byte(contractsStr), &contracts)
-	if err != nil {
-		panic(err)
-	}
-	transactionBody := []byte(fields[6])
-	transactionBodySignaturesStr := fields[7]
-	var transactionBodySignatures []Signature
-	err = json.Unmarshal([]byte(transactionBodySignaturesStr), &transactionBodySignatures)
-	if err != nil {
-		panic(err)
-	}
-	hash := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%f:%d", senderStr, recipientStr, amount, timestamp.UnixNano())))
+	senderKey, recipientKey, amount, s, timestamp, contracts, transactionBody, transactionBodySignatures := DecodeMineRequest(bodyBytes)
+	hash := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%f:%d", senderKey.Y, recipientKey.Y, amount, timestamp.UnixNano())))
 	if TransactionHashes[hash] > 0 {
 		Log("No new job. Ignoring mine request.", true)
 		return

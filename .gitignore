@@ -2,6 +2,7 @@ key.json
 peer_server/target
 gui_wallet/target
 contracts/target
+assembler/target
 nohup.out
 contract.blockasm
 language/cmake-build-debug

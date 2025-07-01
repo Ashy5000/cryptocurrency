@@ -23,20 +23,13 @@ func TestHashBlock(t *testing.T) {
 			Y: []byte("123"),
 		}
 		block := Block{
-			Transactions: []Transaction{
+			ZenTransactions: []MerkleNode{
 				{
-					Sender:    key,
-					Recipient: key,
-					Amount:    0,
-					Contracts: []Contract{
-						{
-							Contents: "",
-							Parties:  nil,
-							GasUsed:  0,
-							Location: 0,
-							Loaded:   false,
-						},
-					},
+					Data:     []byte{},
+					Children: map[byte]int{},
+					Parent:   -1,
+					Hash:     "",
+					Key:      "",
 				},
 			},
 			Miner:                           key,

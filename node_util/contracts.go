@@ -15,11 +15,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/vmihailenco/msgpack/v5"
 	"os"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/vmihailenco/msgpack/v5"
 )
 
 type ContractParty struct {
@@ -28,11 +30,16 @@ type ContractParty struct {
 }
 
 type Contract struct {
-	Contents string
+	Contents []byte
 	Parties  []ContractParty
 	GasUsed  float64
 	Location uint64
 	Loaded   bool
+}
+
+type TransitionKVPair struct {
+	Key   string
+	Value []byte
 }
 
 var ExternalStateWriteableValue = []byte("ExternalStateWriteableValue")
@@ -46,7 +53,7 @@ func (c Contract) LoadContract() {
 	// Try with merkle
 	contract, ok := GetValue(state.ZenContracts, strconv.FormatUint(c.Location, 10))
 	if ok {
-		c.Contents = string(contract)
+		c.Contents = contract
 		c.Parties = nil // Zen drops parties from specification (can be replaced by new VM features)
 		// By only storing contracts in the merkle tree, the root hash will match between the consensus client and the VM
 		// This way, the merkle tree doesn't have to be rebuilt for each transaction
@@ -115,9 +122,12 @@ func (c Contract) Execute(maxGas float64, sender PublicKey) ([]Transaction, Stat
 	transactions := make([]Transaction, 0)
 	gasUsed := 0.0
 	transition := StateTransition{
-		LegacyUpdatedData: make(map[string][]byte),
-		ZenUpdatedData:    make([]MerkleNode, 0),
+		LegacyUpdatedData:  make(map[string][]byte),
+		LegacyNewContracts: make(map[uint64]Contract),
+		ZenUpdatedData:     make([]MerkleNode, 0),
+		ZenNewContracts:    make([]MerkleNode, 0),
 	}
+	stateChangeLines := make([]string, 0)
 	for scanner.Scan() {
 		line := scanner.Text()
 		if len(line) < 3 {
@@ -129,25 +139,7 @@ func (c Contract) Execute(maxGas float64, sender PublicKey) ([]Transaction, Stat
 			}
 			if line[:9] != "Gas used:" {
 				if line[:14] == "State change: " {
-					stateChangeString := line[14:]
-					parts := strings.Split(stateChangeString, "|")
-					address := parts[0]
-					valueHex := parts[1]
-					if valueHex == "" {
-						transition.ZenUpdatedData = InsertValue(transition.ZenUpdatedData, address, []byte{})
-					}
-					valueBytes, err := hex.DecodeString(valueHex)
-					if err != nil {
-						Warn("Error decoding state change:")
-					}
-					fmt.Println("Applying state change:", address, valueBytes)
-					if Env.Upgrades.Zen <= len(Blockchain) {
-						// Zen insert
-						transition.ZenUpdatedData = InsertValue(transition.ZenUpdatedData, address, valueBytes)
-					} else {
-						// Legacy insert
-						transition.LegacyUpdatedData[address] = valueBytes
-					}
+					stateChangeLines = append(stateChangeLines, line)
 				}
 				continue
 			}
@@ -203,10 +195,41 @@ func (c Contract) Execute(maxGas float64, sender PublicKey) ([]Transaction, Stat
 		}
 		transactions = append(transactions, transaction)
 	}
+	zenTransitionSlice := make([]TransitionKVPair, 0)
+	for _, line := range stateChangeLines {
+		stateChangeString := line[14:]
+		parts := strings.Split(stateChangeString, "|")
+		address := parts[0]
+		valueHex := parts[1]
+		if valueHex == "" {
+			transition.ZenUpdatedData = InsertValue(transition.ZenUpdatedData, address, []byte{})
+		}
+		valueBytes, err := hex.DecodeString(valueHex)
+		if err != nil {
+			Warn("Error decoding state change:")
+		}
+		fmt.Println("Applying state change:", address, valueBytes)
+		if Env.Upgrades.Zen <= len(Blockchain) {
+			// Zen insert
+			zenTransitionSlice = append(zenTransitionSlice, TransitionKVPair{
+				Key:   address,
+				Value: valueBytes,
+			})
+		} else {
+			// Legacy insert
+			transition.LegacyUpdatedData[address] = valueBytes
+		}
+	}
+	sort.Slice(zenTransitionSlice, func(i, j int) bool {
+		return zenTransitionSlice[i].Key < zenTransitionSlice[j].Key
+	})
+	for _, pair := range zenTransitionSlice {
+		transition.ZenUpdatedData = InsertValue(transition.ZenUpdatedData, pair.Key, pair.Value)
+	}
 	if c.IsNewContract() {
 		if Env.Upgrades.Zen <= len(Blockchain) && Env.Upgrades.Zen != -1 {
 			// Zen update
-			InsertValue(transition.ZenUpdatedData, strconv.FormatUint(c.Location, 10), []byte(c.Contents))
+			transition.ZenNewContracts = InsertValue(transition.ZenNewContracts, hex.EncodeToString(hash[:]), []byte(c.Contents))
 		} else {
 			// Legacy update
 			transition.LegacyNewContracts = map[uint64]Contract{

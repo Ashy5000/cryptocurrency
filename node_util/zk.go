@@ -20,34 +20,26 @@ import (
 // Go utilities
 
 func WriteZkState(state State) {
-	var segments []string
-	for location, val := range state.LegacyData {
-		var segment string
-		segment += location
-		segment += ">"
-		valHex := hex.EncodeToString(val)
-		segment += valHex
-		segments = append(segments, segment)
-	}
-	for _, i := range state.ZenData {
+	var segments [][]byte
+	aggregateMerkleTree := Merge(state.ZenData, state.ZenContracts)
+	for _, i := range aggregateMerkleTree {
 		if i.Data != nil {
 			var segment string
+			keyLenStr := fmt.Sprintf("%06d", len(i.Key))
+			segment += keyLenStr
 			segment += i.Key
-			segment += ">"
-			valHex := hex.EncodeToString(i.Data)
-			segment += valHex
-			segments = append(segments, segment)
+			valLenStr := fmt.Sprintf("%06d", len(i.Data))
+			segment += valLenStr
+			segmentBytes := []byte(segment)
+			segmentBytes = append(segmentBytes, i.Data...)
+			segments = append(segments, segmentBytes)
 		}
 	}
-	result := ""
+	var result []byte
 	for segment := range segments {
-		result += segments[segment] + "*"
+		result = append(result, segments[segment]...)
 	}
-	if result != "" {
-		// Remove last *
-		result = result[:len(result)-1]
-	}
-	err := os.WriteFile("merkle.txt", []byte(result), 0644)
+	err := os.WriteFile("merkle.txt", result, 0644)
 	if err != nil {
 		panic(err)
 	}
@@ -102,13 +94,14 @@ func WriteContractsAggregate(contracts []Contract) {
 		}
 		return
 	}
-	var segments []string
+	var segments [][]byte
 	for _, contract := range contracts {
 		segments = append(segments, contract.Contents)
 	}
-	res := ""
+	var res []byte
 	for segment := range segments {
-		res += segments[segment] + "*"
+		res = append(res, segments[segment]...)
+		res = append(res, '*')
 	}
 	res = res[:len(res)-1]
 	err := os.WriteFile("contract.blockasm", []byte(res), 0644)

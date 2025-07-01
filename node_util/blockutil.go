@@ -242,14 +242,13 @@ func Send(receiver string, amount string, transactionBody []byte) {
 	}
 	senderStr := EncodePublicKey(key.PublicKey)
 	receiverStr := EncodePublicKey(PublicKey{Y: []byte(receiver)})
-	transactionBodyMarshaled, err := json.Marshal(transactionBody)
 	for _, peer := range GetPeers() {
 		Log("Sending transaction to peer: "+peer, false)
 		contractsStr, err := json.Marshal(make([]Contract, 0))
 		if err != nil {
 			panic(err)
 		}
-		body := strings.NewReader(fmt.Sprintf("%s$%s$%s$%s$%d$%s$%s$[]", senderStr, receiverStr, amount, sigStr, timestamp, contractsStr, string(transactionBodyMarshaled)))
+		body := strings.NewReader(EncodeMineRequest(senderStr, receiverStr, fmt.Sprintf("%s", amount), string(sigStr), timestamp, string(contractsStr), transactionBody, []Signature{}))
 		req, err := http.NewRequest(http.MethodGet, peer+"/mine", body)
 		if err != nil {
 			panic(err)
@@ -265,12 +264,12 @@ func DeploySmartContract(contractPath string, contractLocation string) ([32]byte
 	}
 	var contract Contract
 	if contractPath != "" {
-		file, err := os.ReadFile(contractPath)
+		contents, err := os.ReadFile(contractPath)
 		if err != nil {
 			return [32]byte{}, err
 		}
 		contract = Contract{
-			Contents: string(file),
+			Contents: contents,
 			Parties:  make([]ContractParty, 0),
 			GasUsed:  0,
 			Location: 0,
@@ -293,7 +292,9 @@ func DeploySmartContract(contractPath string, contractLocation string) ([32]byte
 			Y: deployer.Y,
 		},
 	}
-	contractHash := sha256.Sum256([]byte(contract.Contents))
+	contractHash := sha256.Sum256(contract.Contents)
+	fmt.Println(contract.Contents)
+	fmt.Println(contractHash)
 	partySig, err := key.X.Sign(contractHash[:])
 	if err != nil {
 		panic(err)
@@ -322,7 +323,8 @@ func DeploySmartContract(contractPath string, contractLocation string) ([32]byte
 	if err != nil {
 		panic(err)
 	}
-	body := strings.NewReader(fmt.Sprintf("%s$%s$%s$%s$%d$%s$[]$[]", deployerStr, deployerStr, amount, sigStr, timestamp, contractsStr))
+	encoded := EncodeMineRequest(deployerStr, deployerStr, amount, string(sigStr), timestamp, string(contractsStr), []byte{}, []Signature{})
+	body := strings.NewReader(encoded)
 	for _, peer := range GetPeers() {
 		Log("Sending smart contract to peer: "+peer, false)
 		req, err := http.NewRequest(http.MethodGet, peer+"/mine", body)

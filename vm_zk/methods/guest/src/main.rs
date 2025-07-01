@@ -62,7 +62,7 @@ fn main() {
 
         // Run VM
         let (exit_code, gas_used, out) = run_vm(
-            contract_contents[i].parse().unwrap(),
+            contract_contents[i].clone(),
             contract_hashes[i].clone().parse().unwrap(),
             gas_limits[i],
             senders[i].clone(),
@@ -98,8 +98,9 @@ fn main() {
     
     // Calculate state transition hash
     let state_transition_dump = merkle_state.dump();
-    println!("{:?}", state_transition_dump);
-    let state_transition_merkle = merklize(state_transition_dump);
+    let mut state_vec = state_transition_dump.iter().collect::<Vec<(&std::string::String, &Vec<u8>)>>();
+    state_vec.sort_by(|a, b| a.0.cmp(&b.0));
+    let state_transition_merkle = merklize(state_vec);
     let state_transition_root = state_transition_merkle[0].hash.clone();
     println!("{}", state_transition_root);
 

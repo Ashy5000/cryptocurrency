@@ -116,7 +116,7 @@ std::string LabelManager::ReplaceLabels(const std::string& blockasm) {
             }
             std::string labelIdString = section.substr(1);
             int labelId = stoi(labelIdString);
-            int labelPos = labels[labelId];
+            int labelPos = labels[labelId] + 1;
             if(isFirstSection) {
                 newLine << labelPos;
                 isFirstSection = false;

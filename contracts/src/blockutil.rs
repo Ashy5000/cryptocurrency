@@ -12,7 +12,7 @@ use crate::sanitization::sanitize_node_console_command;
 use smartstring::alias::String;
 
 pub trait BlockUtilInterface {
-    fn read_contract(&mut self, location: u64) -> Result<String, String>;
+    fn read_contract(&mut self, location: String) -> Result<Vec<u8>, String>;
     fn get_from_state(&self, property: String) -> (Vec<u8>, bool);
     fn get_blockchain_len(&self) -> u64;
     fn query_oracle(&self, query_type: u64, query_body: Vec<u8>) -> (Vec<u8>, bool);
@@ -38,7 +38,7 @@ impl NodeBlockUtilInterface {
 }
 
 impl BlockUtilInterface for NodeBlockUtilInterface {
-    fn read_contract(&mut self, location: u64) -> Result<String, String> {
+    fn read_contract(&mut self, location: String) -> Result<Vec<u8>, String> {
         let command = format!("readSmartContract {}", location);
         if !sanitize_node_console_command(&command) {
             println!("Forbidden command");
@@ -49,11 +49,9 @@ impl BlockUtilInterface for NodeBlockUtilInterface {
             .arg(command)
             .output();
         let output = output.expect("Failed to execute node script");
-        let output = std::string::String::from_utf8(output.stdout)
-            .expect("Failed to convert output to string");
-        // Remove the newline character
-        let output = output.trim().to_string();
-        Ok(output.parse().unwrap())
+        let mut output = output.stdout;
+        output.pop().unwrap();
+        Ok(output.iter().skip_while(|x| **x != b'\n').skip(1).skip_while(|x| **x != b'\n').skip(1).map(|x| *x).collect())
     }
     fn get_from_state(&self, property: String) -> (Vec<u8>, bool) {
         let command = format!("sync;getFromState {}", property);

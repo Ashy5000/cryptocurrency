@@ -15,7 +15,8 @@ impl<T: Clone + Serialize> HostVector<T> {
         |data| {
             let indices = data.to_vec();
             let data = self.elements[indices[0] as usize].clone();
-            Ok(bincode::serialize(&data).unwrap().into())
+            let vec = bincode::serde::encode_to_vec(data, bincode::config::standard())?;
+            Ok(risc0_zkvm::Bytes::from(vec))
         }
     }
 }
